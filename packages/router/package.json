@@ -1,0 +1,35 @@
+{
+    "name": "@emberapi/router",
+    "version": "1.0.0",
+    "description": "🔥 Blazing fast router with radix tree and pre-compiled routes",
+    "main": "./dist/index.js",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "require": "./dist/index.js",
+            "import": "./dist/index.mjs"
+        }
+    },
+    "scripts": {
+        "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+        "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+        "test": "echo \"Tests coming soon\"",
+        "lint": "tsc --noEmit",
+        "clean": "rm -rf dist"
+    },
+    "keywords": [
+        "router",
+        "radix-tree",
+        "fast",
+        "emberapi"
+    ],
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "tsup": "^8.0.1",
+        "typescript": "^5.3.3"
+    },
+    "dependencies": {}
+}

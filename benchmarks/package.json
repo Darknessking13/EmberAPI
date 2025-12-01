@@ -1,0 +1,26 @@
+{
+    "name": "emberapi-benchmarks",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Performance benchmarks for EmberAPI",
+    "type": "module",
+    "scripts": {
+        "bench:router": "tsx benchmarks/router-benchmark.ts",
+        "bench:framework": "tsx benchmarks/framework-benchmark.ts",
+        "bench:all": "npm run bench:router && npm run bench:framework"
+    },
+    "dependencies": {
+        "@emberapi/router": "workspace:*",
+        "emberapi": "workspace:*",
+        "express": "^4.18.2",
+        "fastify": "^4.25.2",
+        "find-my-way": "^8.1.0"
+    },
+    "devDependencies": {
+        "@types/express": "^4.17.21",
+        "@types/node": "^20.10.6",
+        "autocannon": "^7.15.0",
+        "tsx": "^4.7.0",
+        "typescript": "^5.3.3"
+    }
+}

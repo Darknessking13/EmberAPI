@@ -57,10 +57,31 @@ async function runAutocannon(url: string): Promise<any> {
                     reject(new Error(`Failed to parse autocannon output: ${e}`));
                 }
             } else {
-                reject(new Error(`Autocannon failed: ${errorOutput}`));
+                reject(new Error(`Autocannon failed with code ${code}: ${errorOutput}`));
             }
         });
+
+        // Add timeout for autocannon (DURATION + 15 seconds buffer)
+        const timeout = setTimeout(() => {
+            proc.kill('SIGTERM');
+            setTimeout(() => proc.kill('SIGKILL'), 1000);
+            reject(new Error(`Autocannon timed out after ${DURATION + 15} seconds`));
+        }, (DURATION + 15) * 1000);
+
+        proc.on('close', () => clearTimeout(timeout));
     });
+}
+
+/**
+ * Test if server is responding
+ */
+async function testServerConnection(url: string): Promise<boolean> {
+    try {
+        const response = await fetch(url);
+        return response.ok;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -130,10 +151,21 @@ async function benchmarkFramework(name: string, scriptPath: string): Promise<Ben
     // Wait for server to be fully ready
     await sleep(2000);
 
+    // Test server connectivity
+    const testUrl = `http://localhost:${PORT}/users/123?filter=active&sort=name&limit=10`;
+    console.log(`  Testing server connectivity...`);
+    const isConnected = await testServerConnection(testUrl);
+
+    if (!isConnected) {
+        await stopServer(proc);
+        throw new Error(`Server is not responding at ${testUrl}`);
+    }
+
+    console.log(`  ✅ Server is responding`);
     console.log(`  Running load test (${DURATION}s, ${CONNECTIONS} connections)...`);
 
     try {
-        const result = await runAutocannon(`http://localhost:${PORT}/users/123?filter=active&sort=name&limit=10`);
+        const result = await runAutocannon(testUrl);
 
         await stopServer(proc);
 

@@ -1,12 +1,26 @@
 /**
- * 🔥 Framework Benchmark: EmberAPI vs Express vs Fastify
+ * 🔥 Enhanced Framework Benchmark: EmberAPI vs Express vs Fastify
  * 
- * Compares the full framework performance using autocannon for HTTP load testing.
- * Tests realistic scenarios with actual HTTP requests.
+ * Features:
+ * - Resource monitoring (CPU & Memory)
+ * - Startup time tracking
+ * - Better error handling
+ * - Detailed metrics
  */
 
 import { spawn, type ChildProcess } from 'child_process';
 import { setTimeout as sleep } from 'timers/promises';
+import pidusage from 'pidusage';
+import chalk from 'chalk';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+
+interface ServerConfig {
+    name: string;
+    file: string;
+    port: number;
+    readySignal: string;
+}
 
 interface BenchmarkResult {
     framework: string;
@@ -14,16 +28,172 @@ interface BenchmarkResult {
     latencyAvg: number;
     latencyP99: number;
     throughput: number;
+    errors: number;
+    timeouts: number;
+    startupTimeMs: number;
+}
+
+interface ResourceUsage {
+    cpuReadings: number[];
+    memReadings: number[];
 }
 
 const PORT = 3100;
 const DURATION = 10; // seconds
 const CONNECTIONS = 100;
+const MONITORING_INTERVAL = 500; // ms
+
+const servers: ServerConfig[] = [
+    {
+        name: 'EmberAPI',
+        file: './servers/emberapi-server.ts',
+        port: PORT,
+        readySignal: 'EmberAPI server listening',
+    },
+    {
+        name: 'Fastify',
+        file: './servers/fastify-server.ts',
+        port: PORT,
+        readySignal: 'Fastify server listening',
+    },
+    {
+        name: 'Express',
+        file: './servers/express-server.ts',
+        port: PORT,
+        readySignal: 'Express server listening',
+    },
+];
 
 /**
- * Run autocannon benchmark
+ * Formats bytes into MB
  */
-async function runAutocannon(url: string): Promise<any> {
+function formatBytes(bytes: number): string {
+    if (!bytes || bytes === 0) return '0.00 MB';
+    return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+/**
+ * Prints benchmark results and resource usage
+ */
+function printResults(
+    serverName: string,
+    benchmarkResults: BenchmarkResult | null,
+    resourceResults: ResourceUsage
+): void {
+    const { cpuReadings = [], memReadings = [] } = resourceResults || {};
+
+    // Calculate average and peak usage
+    const avgCpu = cpuReadings.length > 0 ? cpuReadings.reduce((a, b) => a + b, 0) / cpuReadings.length : 0;
+    const peakCpu = cpuReadings.length > 0 ? Math.max(...cpuReadings) : 0;
+    const avgMem = memReadings.length > 0 ? memReadings.reduce((a, b) => a + b, 0) / memReadings.length : 0;
+    const peakMem = memReadings.length > 0 ? Math.max(...memReadings) : 0;
+
+    console.log(chalk.magentaBright(`\n📋 Results for ${chalk.bold(serverName)}:`));
+
+    if (benchmarkResults) {
+        console.log(`→ Startup Time:     ${chalk.cyan(benchmarkResults.startupTimeMs.toFixed(0))} ms`);
+        console.log(`→ Requests/sec:     ${chalk.green(benchmarkResults.requestsPerSecond.toFixed(2))}`);
+        console.log(`→ Latency (avg):    ${chalk.yellow(benchmarkResults.latencyAvg.toFixed(2))} ms`);
+        console.log(`→ Latency (p99):    ${chalk.yellow(benchmarkResults.latencyP99.toFixed(2))} ms`);
+        console.log(`→ Throughput (avg): ${chalk.cyan(formatBytes(benchmarkResults.throughput))}/s`);
+
+        if (benchmarkResults.errors > 0 || benchmarkResults.timeouts > 0) {
+            console.log(chalk.red(`→ Errors:           ${benchmarkResults.errors}`));
+            console.log(chalk.red(`→ Timeouts:         ${benchmarkResults.timeouts}`));
+        }
+    } else {
+        console.log(chalk.red('→ Benchmark data unavailable (error occurred).'));
+    }
+
+    console.log(chalk.magentaBright('\n🧠 Resource Usage During Benchmark:'));
+    if (cpuReadings.length > 0 || memReadings.length > 0) {
+        console.log(`→ Avg CPU Usage:    ${chalk.yellow(avgCpu.toFixed(2))}%`);
+        console.log(`→ Peak CPU Usage:   ${chalk.red(peakCpu.toFixed(2))}%`);
+        console.log(`→ Avg Memory Usage: ${chalk.yellow(formatBytes(avgMem))}`);
+        console.log(`→ Peak Memory Usage:${chalk.red(formatBytes(peakMem))}`);
+        console.log(chalk.dim(`  (Based on ${cpuReadings.length} samples taken every ${MONITORING_INTERVAL}ms)`));
+    } else {
+        console.log(chalk.yellow('  Could not collect resource usage data.'));
+    }
+    console.log(chalk.magentaBright(`--- End Results ---\n`));
+}
+
+/**
+ * Starts a server process and waits for its ready signal
+ */
+function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProcess; startupTimeMs: number }> {
+    return new Promise((resolve, reject) => {
+        const startTime = process.hrtime.bigint();
+        console.log(chalk.blue(`\n🚀 Starting ${serverConfig.name} server... (File: ${resolve(serverConfig.file)})`));
+
+        if (!existsSync(serverConfig.file)) {
+            return reject(new Error(`Server file not found: ${resolve(serverConfig.file)}`));
+        }
+
+        const serverProcess = spawn('tsx', [serverConfig.file], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: true,
+        });
+
+        let output = '';
+        let errorOutput = '';
+        let resolved = false;
+        const pid = serverProcess.pid;
+
+        if (pid) {
+            console.log(chalk.dim(`   Spawned ${serverConfig.name} with PID: ${pid}`));
+        }
+
+        serverProcess.stdout?.on('data', (data) => {
+            const chunk = data.toString();
+            output += chunk;
+
+            if (!resolved && output.includes(serverConfig.readySignal)) {
+                resolved = true;
+                const endTime = process.hrtime.bigint();
+                const startupTimeMs = Number((endTime - startTime) / 1000000n);
+
+                console.log(
+                    chalk.green(`✅ ${serverConfig.name} server ready. PID: ${pid || 'N/A'}. `) +
+                    chalk.dim(`(Startup Time: ${startupTimeMs.toFixed(0)} ms)`)
+                );
+
+                setTimeout(() => resolve({ process: serverProcess, startupTimeMs }), 300);
+            }
+        });
+
+        serverProcess.stderr?.on('data', (data) => {
+            const chunk = data.toString();
+            console.error(chalk.red(`[${serverConfig.name} ERR] ${chunk.trim()}`));
+            errorOutput += chunk;
+        });
+
+        serverProcess.on('error', (err) => {
+            if (!resolved) {
+                resolved = true;
+                reject(new Error(`Failed to spawn ${serverConfig.name}: ${err.message}`));
+            }
+        });
+
+        const startupTimeout = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                serverProcess.kill('SIGKILL');
+                reject(new Error(`${serverConfig.name} failed to start within 15 seconds`));
+            }
+        }, 15000);
+
+        serverProcess.on('exit', () => clearTimeout(startupTimeout));
+        serverProcess.on('error', () => clearTimeout(startupTimeout));
+    });
+}
+
+/**
+ * Runs autocannon benchmark
+ */
+async function runAutocannon(url: string, serverName: string): Promise<any> {
+    console.log(chalk.blue(`🔥 Running benchmark on ${chalk.bold(serverName)} (${url})... (Duration: ${DURATION}s)`));
+
     return new Promise((resolve, reject) => {
         const args = [
             url,
@@ -52,6 +222,7 @@ async function runAutocannon(url: string): Promise<any> {
             if (code === 0) {
                 try {
                     const result = JSON.parse(output);
+                    console.log(chalk.blue(`📊 Benchmark finished for ${serverName}.`));
                     resolve(result);
                 } catch (e) {
                     reject(new Error(`Failed to parse autocannon output: ${e}`));
@@ -61,7 +232,7 @@ async function runAutocannon(url: string): Promise<any> {
             }
         });
 
-        // Add timeout for autocannon (DURATION + 15 seconds buffer)
+        // Timeout
         const timeout = setTimeout(() => {
             proc.kill('SIGTERM');
             setTimeout(() => proc.kill('SIGKILL'), 1000);
@@ -73,185 +244,130 @@ async function runAutocannon(url: string): Promise<any> {
 }
 
 /**
- * Test if server is responding
+ * Monitors CPU and Memory usage
  */
-async function testServerConnection(url: string): Promise<boolean> {
-    try {
-        const response = await fetch(url);
-        return response.ok;
-    } catch {
-        return false;
+function monitorResources(pid: number | undefined, durationSeconds: number): Promise<ResourceUsage> {
+    if (!pid) {
+        console.log(chalk.yellow('⚠️  No PID available for resource monitoring'));
+        return Promise.resolve({ cpuReadings: [], memReadings: [] });
     }
-}
 
-/**
- * Start a server process
- */
-async function startServer(scriptPath: string): Promise<ChildProcess> {
-    return new Promise((resolve, reject) => {
-        const proc = spawn('tsx', [scriptPath], {
-            stdio: ['ignore', 'pipe', 'pipe'],
-            shell: true,
-        });
+    console.log(chalk.blue(`🔬 Starting resource monitoring for PID ${pid}...`));
 
-        let started = false;
+    const cpuReadings: number[] = [];
+    const memReadings: number[] = [];
+    let intervalId: NodeJS.Timeout;
 
-        proc.stdout?.on('data', (data) => {
-            const output = data.toString();
-            console.log(`  ${output.trim()}`);
-
-            if (!started && (output.includes('listening') || output.includes('launched') || output.includes('started'))) {
-                started = true;
-                resolve(proc);
-            }
-        });
-
-        proc.stderr?.on('data', (data) => {
-            console.error(`  Error: ${data.toString().trim()}`);
-        });
-
-        proc.on('error', reject);
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-            if (!started) {
-                proc.kill();
-                reject(new Error('Server failed to start within 10 seconds'));
-            }
-        }, 10000);
-    });
-}
-
-/**
- * Stop a server process
- */
-async function stopServer(proc: ChildProcess): Promise<void> {
     return new Promise((resolve) => {
-        proc.on('close', () => resolve());
-        proc.kill('SIGTERM');
-
-        // Force kill after 2 seconds
-        setTimeout(() => {
-            if (!proc.killed) {
-                proc.kill('SIGKILL');
+        intervalId = setInterval(async () => {
+            try {
+                const stats = await pidusage(pid);
+                cpuReadings.push(stats.cpu);
+                memReadings.push(stats.memory);
+            } catch (err: any) {
+                if (!err.message.toLowerCase().includes("process doesn't exist")) {
+                    console.warn(chalk.yellow(`Pidusage warning: ${err.message}`));
+                }
             }
-        }, 2000);
+        }, MONITORING_INTERVAL);
+
+        setTimeout(() => {
+            clearInterval(intervalId);
+            console.log(chalk.blue(`🔬 Resource monitoring stopped for PID ${pid}.`));
+            resolve({ cpuReadings, memReadings });
+        }, (durationSeconds * 1000) + MONITORING_INTERVAL);
     });
 }
 
 /**
- * Benchmark a framework
- */
-async function benchmarkFramework(name: string, scriptPath: string): Promise<BenchmarkResult> {
-    console.log(`\n🔥 Benchmarking ${name}...`);
-    console.log(`  Starting server...`);
-
-    const proc = await startServer(scriptPath);
-
-    // Wait for server to be fully ready
-    await sleep(2000);
-
-    // Test server connectivity
-    const testUrl = `http://localhost:${PORT}/users/123?filter=active&sort=name&limit=10`;
-    console.log(`  Testing server connectivity...`);
-    const isConnected = await testServerConnection(testUrl);
-
-    if (!isConnected) {
-        await stopServer(proc);
-        throw new Error(`Server is not responding at ${testUrl}`);
-    }
-
-    console.log(`  ✅ Server is responding`);
-    console.log(`  Running load test (${DURATION}s, ${CONNECTIONS} connections)...`);
-
-    try {
-        const result = await runAutocannon(testUrl);
-
-        await stopServer(proc);
-
-        const benchResult: BenchmarkResult = {
-            framework: name,
-            requestsPerSecond: result.requests.average,
-            latencyAvg: result.latency.mean,
-            latencyP99: result.latency.p99,
-            throughput: result.throughput.average,
-        };
-
-        console.log(`  ✅ Complete`);
-        console.log(`     Requests/sec: ${benchResult.requestsPerSecond.toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
-        console.log(`     Latency (avg): ${benchResult.latencyAvg.toFixed(2)}ms`);
-        console.log(`     Latency (p99): ${benchResult.latencyP99.toFixed(2)}ms`);
-        console.log(`     Throughput: ${(benchResult.throughput / 1024 / 1024).toFixed(2)} MB/s`);
-
-        return benchResult;
-    } catch (error) {
-        await stopServer(proc);
-        throw error;
-    }
-}
-
-/**
- * Run all benchmarks
+ * Main benchmark execution
  */
 async function runBenchmarks() {
-    console.log('🔥🔥🔥 Framework Benchmark Suite 🔥🔥🔥\n');
+    console.log(chalk.yellow('\n🔥🔥🔥 Enhanced Framework Benchmark Suite 🔥🔥🔥\n'));
     console.log(`Duration: ${DURATION}s per framework`);
     console.log(`Connections: ${CONNECTIONS}`);
     console.log(`Port: ${PORT}`);
-    console.log('='.repeat(60));
+    console.log('='.repeat(70));
 
-    const results: BenchmarkResult[] = [];
+    const allResults: BenchmarkResult[] = [];
 
-    try {
-        // Benchmark EmberAPI
-        results.push(await benchmarkFramework('EmberAPI', './servers/emberapi-server.ts'));
-        await sleep(2000);
+    for (const serverConfig of servers) {
+        let serverProcess: ChildProcess | null = null;
+        let pid: number | undefined;
+        let benchmarkResults: BenchmarkResult | null = null;
+        let resourceResults: ResourceUsage = { cpuReadings: [], memReadings: [] };
+        let startupTimeMs = 0;
 
-        // Benchmark Fastify
-        results.push(await benchmarkFramework('Fastify', './servers/fastify-server.ts'));
-        await sleep(2000);
+        try {
+            const { process, startupTimeMs: startup } = await startServer(serverConfig);
+            serverProcess = process;
+            pid = serverProcess.pid;
+            startupTimeMs = startup;
 
-        // Benchmark Express
-        results.push(await benchmarkFramework('Express', './servers/express-server.ts'));
+            const url = `http://localhost:${serverConfig.port}/users/123`;
 
-        // Print comparison
-        console.log('\n' + '='.repeat(60));
-        console.log('\n📊 Comparison\n');
+            // Start monitoring and benchmark simultaneously
+            const monitorPromise = monitorResources(pid, DURATION);
+            const autocannonResult = await runAutocannon(url, serverConfig.name);
+            resourceResults = await monitorPromise;
+
+            benchmarkResults = {
+                framework: serverConfig.name,
+                requestsPerSecond: autocannonResult.requests.average,
+                latencyAvg: autocannonResult.latency.mean,
+                latencyP99: autocannonResult.latency.p99,
+                throughput: autocannonResult.throughput.average,
+                errors: autocannonResult.errors || 0,
+                timeouts: autocannonResult.timeouts || 0,
+                startupTimeMs,
+            };
+
+            allResults.push(benchmarkResults);
+
+        } catch (error: any) {
+            console.error(chalk.red(`\n❌ Benchmark run failed for ${serverConfig.name}: ${error.message}`));
+        } finally {
+            // Print results
+            printResults(serverConfig.name, benchmarkResults, resourceResults);
+
+            // Cleanup
+            if (serverProcess && !serverProcess.killed) {
+                console.log(chalk.blue(`🔪 Stopping ${serverConfig.name} server (PID: ${pid})...`));
+                serverProcess.kill('SIGTERM');
+                await sleep(500);
+                if (!serverProcess.killed) {
+                    serverProcess.kill('SIGKILL');
+                }
+            }
+        }
+
+        // Delay between servers
+        await sleep(1000);
+    }
+
+    // Print comparison
+    if (allResults.length > 0) {
+        console.log('\n' + '='.repeat(70));
+        console.log(chalk.greenBright('\n📊 Final Comparison\n'));
 
         // Sort by requests per second
-        results.sort((a, b) => b.requestsPerSecond - a.requestsPerSecond);
+        const sorted = [...allResults].sort((a, b) => b.requestsPerSecond - a.requestsPerSecond);
 
-        console.log('Requests per Second:');
-        results.forEach((r, i) => {
+        console.log(chalk.bold('Requests per Second:'));
+        sorted.forEach((r, i) => {
             const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-            const percent = i === 0 ? '100%' : `${((r.requestsPerSecond / results[0].requestsPerSecond) * 100).toFixed(1)}%`;
+            const percent = i === 0 ? '100%' : `${((r.requestsPerSecond / sorted[0].requestsPerSecond) * 100).toFixed(1)}%`;
             console.log(`  ${icon} ${r.framework.padEnd(15)} ${r.requestsPerSecond.toLocaleString('en-US', { maximumFractionDigits: 0 }).padStart(10)} req/s (${percent})`);
         });
 
-        // Sort by latency (lower is better)
-        const latencyResults = [...results].sort((a, b) => a.latencyAvg - b.latencyAvg);
-        console.log('\nAverage Latency:');
-        latencyResults.forEach((r, i) => {
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-            console.log(`  ${icon} ${r.framework.padEnd(15)} ${r.latencyAvg.toFixed(2).padStart(8)} ms`);
-        });
-
-        // Sort by throughput
-        const throughputResults = [...results].sort((a, b) => b.throughput - a.throughput);
-        console.log('\nThroughput:');
-        throughputResults.forEach((r, i) => {
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-            console.log(`  ${icon} ${r.framework.padEnd(15)} ${(r.throughput / 1024 / 1024).toFixed(2).padStart(8)} MB/s`);
-        });
-
-        console.log('\n' + '='.repeat(60));
-        console.log('\n🔥 Framework benchmark complete!\n');
-
-    } catch (error) {
-        console.error('\n❌ Benchmark failed:', error);
-        process.exit(1);
+        console.log('\n' + '='.repeat(70));
     }
+
+    console.log(chalk.greenBright('\n🏁 Benchmark Suite Finished!\n'));
 }
 
 // Run the benchmarks
-runBenchmarks().catch(console.error);
+runBenchmarks().catch(err => {
+    console.error(chalk.red('\n❌❌❌ Benchmark suite failed unexpectedly:'), err);
+    process.exit(1);
+});

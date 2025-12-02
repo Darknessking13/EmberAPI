@@ -189,6 +189,44 @@ function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProces
 }
 
 /**
+ * Stops a server process and waits for it to exit
+ */
+function stopServer(serverProcess: ChildProcess, serverName: string, pid: number | undefined): Promise<void> {
+    return new Promise((resolve) => {
+        if (!serverProcess || serverProcess.killed) {
+            resolve();
+            return;
+        }
+
+        console.log(chalk.blue(`🔪 Stopping ${serverName} server (PID: ${pid})...`));
+
+        const onExit = () => {
+            console.log(chalk.dim(`   ${serverName} server stopped.`));
+            resolve();
+        };
+
+        serverProcess.once('exit', onExit);
+
+        // Try SIGTERM first
+        const killed = serverProcess.kill('SIGTERM');
+
+        if (!killed) {
+            console.warn(chalk.yellow(`⚠️  Failed to send SIGTERM to ${serverName}. Trying SIGKILL...`));
+            serverProcess.kill('SIGKILL');
+        }
+
+        // Force kill after 2 seconds if still running
+        setTimeout(() => {
+            if (!serverProcess.killed) {
+                console.warn(chalk.yellow(`⚠️  ${serverName} didn't exit gracefully. Force killing...`));
+                serverProcess.kill('SIGKILL');
+                setTimeout(() => resolve(), 500);
+            }
+        }, 2000);
+    });
+}
+
+/**
  * Runs autocannon benchmark
  */
 async function runAutocannon(url: string, serverName: string): Promise<any> {
@@ -330,19 +368,14 @@ async function runBenchmarks() {
             // Print results
             printResults(serverConfig.name, benchmarkResults, resourceResults);
 
-            // Cleanup
-            if (serverProcess && !serverProcess.killed) {
-                console.log(chalk.blue(`🔪 Stopping ${serverConfig.name} server (PID: ${pid})...`));
-                serverProcess.kill('SIGTERM');
-                await sleep(500);
-                if (!serverProcess.killed) {
-                    serverProcess.kill('SIGKILL');
-                }
+            // Cleanup - properly stop the server and wait for it to exit
+            if (serverProcess) {
+                await stopServer(serverProcess, serverConfig.name, pid);
             }
         }
 
-        // Delay between servers
-        await sleep(1000);
+        // Delay between servers to ensure port is fully released
+        await sleep(2000);
     }
 
     // Print comparison

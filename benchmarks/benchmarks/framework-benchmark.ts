@@ -13,7 +13,7 @@ import { setTimeout as sleep } from 'timers/promises';
 import pidusage from 'pidusage';
 import chalk from 'chalk';
 import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve as resolvePath } from 'path';
 
 interface ServerConfig {
     name: string;
@@ -122,12 +122,12 @@ function printResults(
  * Starts a server process and waits for its ready signal
  */
 function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProcess; startupTimeMs: number }> {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolvePromise, reject) => {
         const startTime = process.hrtime.bigint();
-        console.log(chalk.blue(`\n🚀 Starting ${serverConfig.name} server... (File: ${resolve(serverConfig.file)})`));
+        console.log(chalk.blue(`\n🚀 Starting ${serverConfig.name} server... (File: ${resolvePath(serverConfig.file)})`));
 
         if (!existsSync(serverConfig.file)) {
-            return reject(new Error(`Server file not found: ${resolve(serverConfig.file)}`));
+            return reject(new Error(`Server file not found: ${resolvePath(serverConfig.file)}`));
         }
 
         const serverProcess = spawn('tsx', [serverConfig.file], {
@@ -137,7 +137,7 @@ function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProces
 
         let output = '';
         let errorOutput = '';
-        let resolved = false;
+        let isResolved = false;
         const pid = serverProcess.pid;
 
         if (pid) {
@@ -148,8 +148,8 @@ function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProces
             const chunk = data.toString();
             output += chunk;
 
-            if (!resolved && output.includes(serverConfig.readySignal)) {
-                resolved = true;
+            if (!isResolved && output.includes(serverConfig.readySignal)) {
+                isResolved = true;
                 const endTime = process.hrtime.bigint();
                 const startupTimeMs = Number((endTime - startTime) / 1000000n);
 
@@ -158,7 +158,7 @@ function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProces
                     chalk.dim(`(Startup Time: ${startupTimeMs.toFixed(0)} ms)`)
                 );
 
-                setTimeout(() => resolve({ process: serverProcess, startupTimeMs }), 300);
+                setTimeout(() => resolvePromise({ process: serverProcess, startupTimeMs }), 300);
             }
         });
 
@@ -169,15 +169,15 @@ function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProces
         });
 
         serverProcess.on('error', (err) => {
-            if (!resolved) {
-                resolved = true;
+            if (!isResolved) {
+                isResolved = true;
                 reject(new Error(`Failed to spawn ${serverConfig.name}: ${err.message}`));
             }
         });
 
         const startupTimeout = setTimeout(() => {
-            if (!resolved) {
-                resolved = true;
+            if (!isResolved) {
+                isResolved = true;
                 serverProcess.kill('SIGKILL');
                 reject(new Error(`${serverConfig.name} failed to start within 15 seconds`));
             }

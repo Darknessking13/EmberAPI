@@ -1,32 +1,20 @@
 {
     "name": "emberapi-benchmarks",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "private": true,
-    "description": "Performance benchmarks for EmberAPI",
-    "type": "module",
+    "description": "Benchmarks for EmberAPI framework and router",
     "scripts": {
-        "build": "tsc",
-        "bench:router": "tsx benchmarks/router-benchmark.ts",
-        "bench:stress": "tsx benchmarks/router-stress-test.ts",
-        "bench:framework": "tsx benchmarks/framework-benchmark.ts",
-        "bench:all": "npm run bench:router && npm run bench:framework"
+        "bench:router": "node benchmarks/router-benchmark.js",
+        "bench:framework": "node benchmarks/framework-benchmark.js",
+        "bench:all": "npm run bench:router && npm run bench:framework",
+        "bench:autocannon": "node benchmarks/http-benchmark.js"
     },
     "dependencies": {
-        "@emberapi/router": "workspace:*",
-        "chalk": "^5.6.2",
-        "cross-spawn": "^7.0.6",
         "emberapi": "workspace:*",
-        "express": "^4.18.2",
-        "fastify": "^4.25.2",
-        "find-my-way": "^8.1.0",
-        "pidusage": "^4.0.1"
-    },
-    "devDependencies": {
-        "@types/express": "^4.17.21",
-        "@types/node": "^20.10.6",
-        "@types/pidusage": "^2.0.5",
-        "autocannon": "^7.15.0",
-        "tsx": "^4.7.0",
-        "typescript": "^5.3.3"
+        "@emberapi/router": "workspace:*",
+        "find-my-way": "^8.2.2",
+        "fastify": "^5.1.0",
+        "express": "^4.21.2",
+        "autocannon": "^7.15.0"
     }
 }

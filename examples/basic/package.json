@@ -1,21 +1,13 @@
 {
     "name": "emberapi-example",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "private": true,
     "description": "Example application using EmberAPI",
-    "type": "module",
     "scripts": {
-        "dev": "tsx watch src/index.ts",
-        "start": "tsx src/index.ts",
-        "test": "tsx test.ts",
-        "build": "tsc"
+        "dev": "node index.js",
+        "start": "node index.js"
     },
     "dependencies": {
         "emberapi": "workspace:*"
-    },
-    "devDependencies": {
-        "@types/node": "^20.10.6",
-        "tsx": "^4.7.0",
-        "typescript": "^5.3.3"
     }
 }

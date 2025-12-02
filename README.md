@@ -1,15 +1,16 @@
 # 🔥 EmberAPI
 
-A blazing fast Node.js framework with fire-themed APIs and high-performance routing.
+A blazing fast web framework for Node.js with pre-compiled routes and radix tree routing.
 
 ## Features
 
-- ⚡ **Blazing Fast**: Pre-compiled routes with radix tree for O(log n) matching
-- 🔥 **Fire-Themed API**: Intuitive methods like `launch()`, `plug()`, `catch()`, and `ember()`
-- 🎯 **Zero Dependencies**: Built on native Web APIs (Request/Response)
-- 📦 **Monorepo**: Modular architecture with separate `@emberapi/router` package
-- 🚀 **TypeScript**: Full type safety out of the box
-- 🔧 **Turborepo**: Fast builds and caching
+- ⚡ **Blazing Fast** - Pre-compiled routes with O(log n) radix tree matching
+- 🎯 **Zero Dependencies** - Core framework uses only `fast-deep-equal` and `fast-querystring`
+- 🔥 **Fire-Themed API** - `launch()`, `plug()`, `ember()`, `catch()`, `forge()`
+- 🌲 **Radix Tree Router** - Optimized route matching with minimal overhead
+- 🔌 **Middleware Pipeline** - Pre-composed middleware chain for performance
+- 📦 **Monorepo** - Organized with pnpm workspaces and Turbo
+- 🎨 **Separated Contexts** - Clean `req`, `res`, `params`, `query` separation
 
 ## Architecture
 
@@ -54,29 +55,61 @@ A blazing fast Node.js framework with fire-themed APIs and high-performance rout
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Installation
-
-```bash
-npm install emberapi
-```
-
 ## Quick Start
 
-```typescript
-import { EmberAPI } from 'emberapi';
+```bash
+# Install dependencies
+pnpm install
+
+# Build all packages
+pnpm build
+
+# Run example
+cd examples/basic
+node index.js
+```
+
+## Usage
+
+```javascript
+const { EmberAPI } = require('emberapi');
 
 const app = new EmberAPI();
 
-// Define routes
+// Simple route
 app.get('/', (req, res) => {
-  return res.json({ message: 'Hello from EmberAPI! 🔥' });
+  return res.json({ message: '🔥 Welcome to EmberAPI!' });
 });
 
+// Route with parameters
 app.get('/users/:id', (req, res, params) => {
   return res.json({ userId: params.id });
 });
 
-// Launch the server
+// Route with query parameters
+app.get('/search', (req, res, params, query) => {
+  return res.json({ query: query.q });
+});
+
+// Global middleware
+app.plug(async (req, res, next) => {
+  console.log(`${req.method} ${req.url.pathname}`);
+  await next();
+});
+
+// Route groups
+app.ember('/api', (router) => {
+  router.get('/status', (req, res) => {
+    return res.json({ status: 'ok' });
+  });
+});
+
+// Error handling
+app.catch((error, res) => {
+  return res.json({ error: error.message }, 500);
+});
+
+// Launch server
 app.launch(3000);
 ```
 
@@ -87,8 +120,8 @@ app.launch(3000);
 | Method | Description |
 |--------|-------------|
 | `launch(port, callback?)` | Start the server and compile routes |
-| `forge()` | Manually compile routes (called automatically by `launch()`) |
-| `close()` | Close the server |
+| `forge()` | Manually compile routes (called automatically) |
+| `close(callback?)` | Stop the server |
 
 ### Middleware
 
@@ -100,7 +133,7 @@ app.launch(3000);
 
 | Method | Description |
 |--------|-------------|
-| `ember(prefix, callback, ...middleware)` | Group routes with common prefix and middleware |
+| `ember(prefix, callback, ...mw)` | Group routes with common prefix and middleware |
 
 ### Error Handling
 
@@ -110,25 +143,27 @@ app.launch(3000);
 
 ### HTTP Methods
 
-- `get(pattern, handler, ...middleware)`
-- `post(pattern, handler, ...middleware)`
-- `put(pattern, handler, ...middleware)`
-- `delete(pattern, handler, ...middleware)`
-- `patch(pattern, handler, ...middleware)`
-- `options(pattern, handler, ...middleware)`
-- `head(pattern, handler, ...middleware)`
+| Method | Description |
+|--------|-------------|
+| `get(path, handler, ...mw)` | Register GET route |
+| `post(path, handler, ...mw)` | Register POST route |
+| `put(path, handler, ...mw)` | Register PUT route |
+| `delete(path, handler, ...mw)` | Register DELETE route |
+| `patch(path, handler, ...mw)` | Register PATCH route |
+| `options(path, handler, ...mw)` | Register OPTIONS route |
+| `head(path, handler, ...mw)` | Register HEAD route |
 
-## Request Context
+### Request Context
 
-| Property | Description |
-|----------|-------------|
+| Property/Method | Description |
+|-----------------|-------------|
 | `req.raw` | Original Request object |
-| `req.body` | Parsed request body (JSON/form/text) |
+| `req.body()` | Parsed request body (async) |
 | `req.headers` | Request headers |
 | `req.url` | Parsed URL object |
 | `req.method` | HTTP method |
 
-## Response Context
+### Response Context
 
 | Method | Description |
 |--------|-------------|
@@ -136,10 +171,11 @@ app.launch(3000);
 | `res.text(data, status?)` | Send text response |
 | `res.html(data, status?)` | Send HTML response |
 | `res.send(data, status?)` | Auto-detect and send response |
+| `res.setHeader(name, value)` | Set response header |
 
-## Handler Signature
+### Handler Signature
 
-```typescript
+```javascript
 handler(req, res, params, query) => Response | any
 ```
 
@@ -148,39 +184,16 @@ handler(req, res, params, query) => Response | any
 - `params` - Route parameters (e.g., `/users/:id` → `{id: "123"}`)
 - `query` - Query string parameters (e.g., `?filter=active` → `{filter: "active"}`)
 
-## Examples
+### Middleware Signature
 
-### Middleware
-
-```typescript
-app.plug((req, res, next) => {
-  console.log(`${req.method} ${req.url.pathname}`);
-  next();
-});
+```javascript
+middleware(req, res, next) => void | Promise<void>
 ```
 
-### Route Groups
+## Packages
 
-```typescript
-app.ember('/api', (api) => {
-  api.get('/users', (req, res) => {
-    return res.json({ users: [] });
-  });
-  
-  api.get('/posts', (req, res) => {
-    return res.json({ posts: [] });
-  });
-});
-```
-
-### Error Handling
-
-```typescript
-app.catch((error, req, res) => {
-  console.error(error);
-  return res.json({ error: error.message }, 500);
-});
-```
+- **`emberapi`** - Main framework package
+- **`@emberapi/router`** - Standalone router with radix tree
 
 ## Performance Tips
 
@@ -190,32 +203,23 @@ app.catch((error, req, res) => {
 4. **Keep handlers simple** - offload heavy work to background jobs
 5. **Use native `Response`** objects when possible for zero overhead
 
-## Monorepo Structure
-
-```
-EmberAPI/
-├── packages/
-│   ├── router/          # @emberapi/router - Fast routing engine
-│   └── emberapi/        # emberapi - Main framework
-├── package.json
-├── turbo.json
-└── tsconfig.json
-```
-
 ## Development
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Build all packages
-npm run build
+pnpm build
 
 # Watch mode
-npm run dev
+pnpm dev
 
 # Run tests
-npm run test
+pnpm test
+
+# Clean build artifacts
+pnpm clean
 ```
 
 ## License

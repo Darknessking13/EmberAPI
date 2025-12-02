@@ -1,39 +1,37 @@
 {
     "name": "emberapi",
-    "version": "1.0.0",
-    "description": "🔥 EmberAPI - A blazing fast Node.js framework with fire-themed APIs",
-    "main": "./dist/index.js",
-    "module": "./dist/index.mjs",
-    "types": "./dist/index.d.ts",
+    "version": "0.1.0",
+    "description": "🔥 EmberAPI - A blazing fast web framework for Node.js",
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
-            "require": "./dist/index.js",
-            "import": "./dist/index.mjs"
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js"
         }
     },
     "scripts": {
-        "build": "tsup src/index.ts --format cjs,esm --dts --clean",
-        "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-        "test": "echo \"Tests coming soon\"",
-        "lint": "tsc --noEmit",
+        "build": "node build.js",
+        "dev": "node build.js --watch",
+        "test": "node --test src/**/*.test.js",
         "clean": "rm -rf dist"
     },
     "keywords": [
-        "framework",
-        "web",
+        "web-framework",
         "http",
+        "router",
         "emberapi",
-        "fast"
+        "fast",
+        "performance"
     ],
-    "author": "",
+    "author": "EmberAPI Team",
     "license": "MIT",
-    "devDependencies": {
-        "@types/node": "^20.10.6",
-        "tsup": "^8.0.1",
-        "typescript": "^5.3.3"
-    },
     "dependencies": {
         "@emberapi/router": "workspace:*"
+    },
+    "devDependencies": {
+        "esbuild": "^0.24.0"
     }
 }

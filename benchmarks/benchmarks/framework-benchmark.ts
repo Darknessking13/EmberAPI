@@ -189,6 +189,24 @@ function startServer(serverConfig: ServerConfig): Promise<{ process: ChildProces
 }
 
 /**
+ * Kill a process by PID (cross-platform)
+ */
+function killProcessByPid(pid: number, signal: NodeJS.Signals = 'SIGTERM'): boolean {
+    try {
+        process.kill(pid, signal);
+        console.log(chalk.dim(`   Sent ${signal} to PID ${pid}`));
+        return true;
+    } catch (err: any) {
+        if (err.code === 'ESRCH') {
+            console.log(chalk.dim(`   Process ${pid} already dead`));
+        } else {
+            console.warn(chalk.yellow(`   Warning: Could not kill PID ${pid}: ${err.message}`));
+        }
+        return false;
+    }
+}
+
+/**
  * Stops a server process and waits for it to exit
  */
 function stopServer(serverProcess: ChildProcess, serverName: string, pid: number | undefined): Promise<void> {
@@ -200,29 +218,52 @@ function stopServer(serverProcess: ChildProcess, serverName: string, pid: number
 
         console.log(chalk.blue(`🔪 Stopping ${serverName} server (PID: ${pid})...`));
 
+        let resolved = false;
+
         const onExit = () => {
-            console.log(chalk.dim(`   ${serverName} server stopped.`));
-            resolve();
+            if (!resolved) {
+                resolved = true;
+                console.log(chalk.green(`   ✅ ${serverName} server stopped.`));
+                resolve();
+            }
         };
 
         serverProcess.once('exit', onExit);
 
-        // Try SIGTERM first
-        const killed = serverProcess.kill('SIGTERM');
+        // Kill by PID if available (more reliable than ChildProcess.kill)
+        if (pid) {
+            killProcessByPid(pid, 'SIGTERM');
 
-        if (!killed) {
-            console.warn(chalk.yellow(`⚠️  Failed to send SIGTERM to ${serverName}. Trying SIGKILL...`));
-            serverProcess.kill('SIGKILL');
+            // Force kill after 2 seconds
+            setTimeout(() => {
+                if (!resolved) {
+                    console.warn(chalk.yellow(`⚠️  ${serverName} (PID: ${pid}) didn't exit. Force killing...`));
+                    killProcessByPid(pid, 'SIGKILL');
+
+                    setTimeout(() => {
+                        if (!resolved) {
+                            resolved = true;
+                            resolve();
+                        }
+                    }, 500);
+                }
+            }, 2000);
+        } else {
+            // Fallback to ChildProcess.kill()
+            serverProcess.kill('SIGTERM');
+
+            setTimeout(() => {
+                if (!resolved && !serverProcess.killed) {
+                    serverProcess.kill('SIGKILL');
+                }
+                setTimeout(() => {
+                    if (!resolved) {
+                        resolved = true;
+                        resolve();
+                    }
+                }, 500);
+            }, 2000);
         }
-
-        // Force kill after 2 seconds if still running
-        setTimeout(() => {
-            if (!serverProcess.killed) {
-                console.warn(chalk.yellow(`⚠️  ${serverName} didn't exit gracefully. Force killing...`));
-                serverProcess.kill('SIGKILL');
-                setTimeout(() => resolve(), 500);
-            }
-        }, 2000);
     });
 }
 

@@ -133,7 +133,7 @@ async function benchmarkFramework(name: string, scriptPath: string): Promise<Ben
     console.log(`  Running load test (${DURATION}s, ${CONNECTIONS} connections)...`);
 
     try {
-        const result = await runAutocannon(`http://localhost:${PORT}/users/123`);
+        const result = await runAutocannon(`http://localhost:${PORT}/users/123?filter=active&sort=name&limit=10`);
 
         await stopServer(proc);
 

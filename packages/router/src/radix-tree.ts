@@ -1,6 +1,6 @@
 /**
- * 🔥 EmberAPI Router - Radix Tree
- * O(log n) route matching using radix tree data structure
+ * 🔥 EmberAPI Router - Optimized Radix Tree
+ * O(log n) route matching with strategic optimizations
  */
 
 import type { RadixNode, CompiledRoute, RouteMatch, RouteParams } from './types';
@@ -55,83 +55,178 @@ export function insertRoute(
 }
 
 /**
- * Find a matching route in the radix tree
- * Returns the handler and extracted parameters
+ * Find a matching route in the radix tree (OPTIMIZED)
+ * Strategic optimizations for both small and large route sets
  */
 export function findRoute(
     root: RadixNode,
     method: string,
     path: string
 ): RouteMatch | null {
-    const segments = path.split('/').filter(Boolean);
+    const methodUpper = method.toUpperCase();
+
+    // Fast path for root (most common case)
+    if (path === '/' || path === '') {
+        const route = root.routes.get(methodUpper);
+        return route ? { handler: route.handler, params: {}, middleware: route.middleware } : null;
+    }
+
+    // Optimized path splitting - avoid array allocations when possible
+    const pathLen = path.length;
+    let segmentCount = 0;
+
+    // Count segments first (avoids array resizing)
+    for (let i = 1; i < pathLen; i++) {
+        if (path.charCodeAt(i) === 47) segmentCount++; // 47 = '/'
+    }
+    if (pathLen > 1) segmentCount++; // Last segment
+
+    // Pre-allocate array with exact size
+    const segments = new Array(segmentCount);
+    let segIdx = 0;
+    let start = 1;
+
+    for (let i = 1; i <= pathLen; i++) {
+        if (i === pathLen || path.charCodeAt(i) === 47) {
+            if (i > start) {
+                segments[segIdx++] = path.substring(start, i);
+            }
+            start = i + 1;
+        }
+    }
+
+    // Fast path for single segment (common case: /users, /health, etc.)
+    if (segmentCount === 1) {
+        const segment = segments[0];
+
+        // Try static match
+        const staticChild = root.children.get(segment);
+        if (staticChild) {
+            const route = staticChild.routes.get(methodUpper);
+            if (route) {
+                return { handler: route.handler, params: {}, middleware: route.middleware };
+            }
+        }
+
+        // Try param match
+        if (root.paramChild) {
+            const route = root.paramChild.routes.get(methodUpper);
+            if (route) {
+                const params: RouteParams = {};
+                params[root.paramChild.paramName!] = segment.indexOf('%') === -1 ? segment : decodeURIComponent(segment);
+                return { handler: route.handler, params, middleware: route.middleware };
+            }
+        }
+
+        // Try wildcard
+        if (root.wildcardChild) {
+            const route = root.wildcardChild.routes.get(methodUpper);
+            if (route) {
+                const params: RouteParams = { '*': segment.indexOf('%') === -1 ? segment : decodeURIComponent(segment) };
+                return { handler: route.handler, params, middleware: route.middleware };
+            }
+        }
+
+        return null;
+    }
+
+    // General case: multiple segments
     const params: RouteParams = {};
+    let node = root;
+    let segmentIndex = 0;
 
-    const result = searchNode(root, segments, 0, params, method.toUpperCase());
+    // Pre-allocate stack with reasonable size (most routes are < 10 levels deep)
+    const stack: Array<{ node: RadixNode; index: number; paramName?: string }> = new Array(10);
+    let stackSize = 0;
 
-    if (!result) return null;
+    while (true) {
+        // Reached the end of the path
+        if (segmentIndex === segmentCount) {
+            const route = node.routes.get(methodUpper);
+            if (route) {
+                return { handler: route.handler, params, middleware: route.middleware };
+            }
 
-    return {
-        handler: result.handler,
-        params,
-        middleware: result.middleware,
-    };
-}
+            // Backtrack
+            if (stackSize === 0) return null;
+            const state = stack[--stackSize];
+            if (state.paramName) {
+                delete params[state.paramName];
+            }
+            node = state.node;
+            segmentIndex = state.index;
+            continue;
+        }
 
-/**
- * Recursively search the radix tree for a matching route
- */
-function searchNode(
-    node: RadixNode,
-    segments: string[],
-    index: number,
-    params: RouteParams,
-    method: string
-): CompiledRoute | null {
-    // Reached the end of the path
-    if (index === segments.length) {
-        return node.routes.get(method) || null;
+        const segment = segments[segmentIndex];
+
+        // Try static match first (highest priority, fastest)
+        const staticChild = node.children.get(segment);
+        if (staticChild) {
+            node = staticChild;
+            segmentIndex++;
+            continue;
+        }
+
+        // Try parameter match
+        if (node.paramChild) {
+            const paramName = node.paramChild.paramName!;
+            params[paramName] = segment.indexOf('%') === -1 ? segment : decodeURIComponent(segment);
+
+            // Grow stack if needed (rare)
+            if (stackSize >= stack.length) {
+                stack.push({ node: node.paramChild, index: segmentIndex + 1, paramName });
+                stackSize++;
+            } else {
+                stack[stackSize++] = { node: node.paramChild, index: segmentIndex + 1, paramName };
+            }
+
+            node = node.paramChild;
+            segmentIndex++;
+            continue;
+        }
+
+        // Try wildcard match (lowest priority)
+        if (node.wildcardChild) {
+            // Optimized wildcard path joining
+            let wildcardPath: string;
+            const remaining = segmentCount - segmentIndex;
+
+            if (remaining === 1) {
+                wildcardPath = segment;
+            } else {
+                // Pre-calculate total length to avoid string reallocation
+                let totalLen = segment.length;
+                for (let i = segmentIndex + 1; i < segmentCount; i++) {
+                    totalLen += 1 + segments[i].length; // +1 for '/'
+                }
+
+                // Build string in one go
+                const parts = new Array(remaining);
+                parts[0] = segment;
+                for (let i = 1; i < remaining; i++) {
+                    parts[i] = segments[segmentIndex + i];
+                }
+                wildcardPath = parts.join('/');
+            }
+
+            params['*'] = wildcardPath.indexOf('%') === -1 ? wildcardPath : decodeURIComponent(wildcardPath);
+
+            const route = node.wildcardChild.routes.get(methodUpper);
+            if (route) {
+                return { handler: route.handler, params, middleware: route.middleware };
+            }
+        }
+
+        // No match found, backtrack
+        if (stackSize === 0) return null;
+        const state = stack[--stackSize];
+        if (state.paramName) {
+            delete params[state.paramName];
+        }
+        node = state.node;
+        segmentIndex = state.index;
     }
-
-    const segment = segments[index];
-
-    // Try static match first (highest priority)
-    if (node.children.has(segment)) {
-        const result = searchNode(
-            node.children.get(segment)!,
-            segments,
-            index + 1,
-            params,
-            method
-        );
-        if (result) return result;
-    }
-
-    // Try parameter match
-    if (node.paramChild) {
-        const paramName = node.paramChild.paramName!;
-        params[paramName] = decodeURIComponent(segment);
-
-        const result = searchNode(
-            node.paramChild,
-            segments,
-            index + 1,
-            params,
-            method
-        );
-
-        if (result) return result;
-
-        // Backtrack if no match
-        delete params[paramName];
-    }
-
-    // Try wildcard match (lowest priority)
-    if (node.wildcardChild) {
-        params['*'] = segments.slice(index).map(decodeURIComponent).join('/');
-        return node.wildcardChild.routes.get(method) || null;
-    }
-
-    return null;
 }
 
 /**

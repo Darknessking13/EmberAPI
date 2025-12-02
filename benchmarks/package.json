@@ -5,7 +5,9 @@
     "description": "Performance benchmarks for EmberAPI",
     "type": "module",
     "scripts": {
+        "build": "tsc",
         "bench:router": "tsx benchmarks/router-benchmark.ts",
+        "bench:stress": "tsx benchmarks/router-stress-test.ts",
         "bench:framework": "tsx benchmarks/framework-benchmark.ts",
         "bench:all": "npm run bench:router && npm run bench:framework"
     },

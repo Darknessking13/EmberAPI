@@ -74,26 +74,14 @@ function escapeRegex(str: string): string {
 /**
  * Parse query string into params object
  */
+import { parse } from 'fast-querystring';
+
+/**
+ * Parse query string into params object
+ * Uses fast-querystring for maximum performance
+ */
 export function parseQuery(queryString: string): Record<string, string | string[]> {
-    const params: Record<string, string | string[]> = {};
-
-    if (!queryString) return params;
-
-    const pairs = queryString.split('&');
-    for (const pair of pairs) {
-        const [key, value] = pair.split('=').map(decodeURIComponent);
-
-        if (key in params) {
-            // Multiple values for same key
-            if (Array.isArray(params[key])) {
-                (params[key] as string[]).push(value || '');
-            } else {
-                params[key] = [params[key] as string, value || ''];
-            }
-        } else {
-            params[key] = value || '';
-        }
-    }
-
-    return params;
+    if (!queryString) return {};
+    // fast-querystring returns Record<string, any>, but we want strict typing
+    return parse(queryString) as Record<string, string | string[]>;
 }

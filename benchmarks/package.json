@@ -4,10 +4,10 @@
     "private": true,
     "description": "Benchmarks for EmberAPI framework and router",
     "scripts": {
-        "bench:router": "node benchmarks/router-benchmark.js",
-        "bench:framework": "node benchmarks/framework-benchmark.js",
+        "bench:router": "node router-benchmark.js",
+        "bench:framework": "node framework-benchmark.js",
         "bench:all": "npm run bench:router && npm run bench:framework",
-        "bench:autocannon": "node benchmarks/http-benchmark.js"
+        "bench:autocannon": "node http-benchmark.js"
     },
     "dependencies": {
         "emberapi": "workspace:*",
